@@ -96,6 +96,7 @@ bool terminal_process_key(TerminalState *term, char key, bool at_start_of_line) 
     }
     
     // Check if Tab key was pressed at the start of a line
+    // Allow Tab to toggle mode regardless of current mode
     if (key == TAB_KEY && at_start_of_line) {
         terminal_toggle_mode(term);
         return true;
@@ -112,10 +113,14 @@ void terminal_toggle_mode(TerminalState *term) {
     // Toggle between Bash and Chat modes
     if (term->current_mode == MODE_BASH) {
         term->current_mode = MODE_CHAT;
-        fprintf(stderr, "\n[AISH: Chat Mode - Type your query]\n");
+        // Use write instead of fprintf to ensure proper formatting
+        const char *msg = "\r\n[AISH: Chat Mode - Type your query]\r\n";
+        write(STDERR_FILENO, msg, strlen(msg));
     } else {
         term->current_mode = MODE_BASH;
-        fprintf(stderr, "\n[AISH: Bash Mode]\n");
+        // Use write instead of fprintf to ensure proper formatting
+        const char *msg = "\r\n[AISH: Bash Mode]\r\n";
+        write(STDERR_FILENO, msg, strlen(msg));
     }
 }
 

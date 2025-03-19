@@ -174,8 +174,12 @@ bool aish_process_input(AishState *state, const char *input, size_t input_len) {
             return false;
         }
         
-        // Display the command
-        fprintf(stderr, "\n[AISH: Generated command] %s\n", response.command);
+        // Display the command with proper formatting
+        const char *cmd_prefix = "\r\n[AISH: Generated command] ";
+        write(STDERR_FILENO, cmd_prefix, strlen(cmd_prefix));
+        write(STDERR_FILENO, response.command, strlen(response.command));
+        const char *cmd_suffix = "\r\n";
+        write(STDERR_FILENO, cmd_suffix, strlen(cmd_suffix));
         
         // Write the command to the bash process
         if (write(state->bash_master_fd, response.command, strlen(response.command)) == -1) {
@@ -258,8 +262,11 @@ int aish_run(AishState *state) {
     size_t input_pos = 0;
     bool at_start_of_line = true;
     
-    fprintf(stderr, "AISH - AI Shell v0.1\n");
-    fprintf(stderr, "Press Tab at the start of a line to toggle between Bash and Chat modes.\n");
+    // Use write instead of fprintf to ensure proper formatting
+    const char *welcome_msg = "AISH - AI Shell v0.1\r\n";
+    write(STDERR_FILENO, welcome_msg, strlen(welcome_msg));
+    const char *help_msg = "Press Tab at the start of a line to toggle between Bash and Chat modes.\r\n";
+    write(STDERR_FILENO, help_msg, strlen(help_msg));
     
     while (state->running) {
         fd_set read_fds;
@@ -303,6 +310,11 @@ int aish_run(AishState *state) {
                 if (c == '\r' || c == '\n') {
                     // Enter key - process the input
                     input_buffer[input_pos] = '\0';
+                    
+                    // Echo a newline
+                    const char *newline = "\r\n";
+                    write(STDOUT_FILENO, newline, strlen(newline));
+                    
                     aish_process_input(state, input_buffer, input_pos);
                     input_pos = 0;
                     at_start_of_line = true;
@@ -311,8 +323,9 @@ int aish_run(AishState *state) {
                     if (input_pos > 0) {
                         input_pos--;
                         // Echo the backspace
-                        if (write(state->bash_master_fd, "\b \b", 3) == -1) {
-                            fprintf(stderr, "Error: Failed to write backspace to bash: %s\n", strerror(errno));
+                        const char *backspace = "\b \b";
+                        if (write(STDOUT_FILENO, backspace, 3) == -1) {
+                            fprintf(stderr, "Error: Failed to write backspace: %s\n", strerror(errno));
                         }
                     }
                 } else {
