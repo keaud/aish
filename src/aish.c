@@ -4,6 +4,8 @@
  */
 
 #include "aish.h"
+#include "prompt.h"
+#include "chat.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -144,6 +146,133 @@ bool aish_spawn_bash(AishState *state) {
         return false;
     }
     
+    // Set the initial prompt
+    terminal_update_prompt(&state->terminal, state->bash_master_fd);
+    
+    return true;
+}
+
+/**
+ * @brief Process input in Bash mode
+ * 
+ * @param state The AISH state
+ * @param input The input string
+ * @param input_len The length of the input string
+ * @return true if successful, false otherwise
+ */
+bool process_bash_input(AishState *state, const char *input, size_t input_len) {
+    if (state == NULL || input == NULL || input_len == 0) {
+        return false;
+    }
+    
+    // In Bash mode, forward the input to bash
+    if (write(state->bash_master_fd, input, input_len) == -1) {
+        fprintf(stderr, "Error: Failed to write input to bash: %s\n", strerror(errno));
+        return false;
+    }
+    
+    // Write a newline to execute the command
+    if (write(state->bash_master_fd, "\n", 1) == -1) {
+        fprintf(stderr, "Error: Failed to write newline to bash: %s\n", strerror(errno));
+        return false;
+    }
+    
+    return true;
+}
+
+/**
+ * @brief Process a single character of input in Chat mode
+ * 
+ * @param state The AISH state
+ * @param c The character to process
+ * @param input_buffer The input buffer
+ * @param input_pos Pointer to the current position in the input buffer
+ * @return true if successful, false otherwise
+ */
+bool process_chat_keypress(AishState *state, char c, char *input_buffer, size_t *input_pos) {
+    if (state == NULL || input_buffer == NULL || input_pos == NULL) {
+        return false;
+    }
+    
+    if (c == '\r' || c == '\n') {
+        // Enter key - process the input
+        input_buffer[*input_pos] = '\0';
+        
+        // Echo a newline
+        const char *newline = "\r\n";
+        if (write(STDOUT_FILENO, newline, strlen(newline)) == -1) {
+            fprintf(stderr, "Error: Failed to write newline: %s\n", strerror(errno));
+            return false;
+        }
+        
+        // Process the input (send to OpenAI API)
+        process_chat_input(state, input_buffer, *input_pos);
+        *input_pos = 0;
+        
+        // Display the prompt
+        display_prompt(state);
+    } else if (c == 127 || c == '\b') {
+        // Backspace - delete the last character
+        if (*input_pos > 0) {
+            (*input_pos)--;
+            // Echo the backspace
+            const char *backspace = "\b \b";
+            if (write(STDOUT_FILENO, backspace, 3) == -1) {
+                fprintf(stderr, "Error: Failed to write backspace: %s\n", strerror(errno));
+                return false;
+            }
+        }
+    } else {
+        // Regular character - add to buffer
+        if (*input_pos < INPUT_BUFFER_SIZE - 1) {
+            input_buffer[(*input_pos)++] = c;
+            
+            // Echo the character
+            if (write(STDOUT_FILENO, &c, 1) == -1) {
+                fprintf(stderr, "Error: Failed to echo character: %s\n", strerror(errno));
+                return false;
+            }
+        }
+    }
+    
+    return true;
+}
+
+/**
+ * @brief Process a single character of input in Bash mode
+ * 
+ * @param state The AISH state
+ * @param c The character to process
+ * @param input_buffer The input buffer
+ * @param input_pos Pointer to the current position in the input buffer
+ * @return true if successful, false otherwise
+ */
+bool process_bash_keypress(AishState *state, char c, char *input_buffer, size_t *input_pos) {
+    if (state == NULL || input_buffer == NULL || input_pos == NULL) {
+        return false;
+    }
+    
+    // In Bash mode, forward all keypresses directly to bash
+    // (except Tab at start of line, which was handled above)
+    if (write(state->bash_master_fd, &c, 1) == -1) {
+        fprintf(stderr, "Error: Failed to write character to bash: %s\n", strerror(errno));
+        return false;
+    }
+    
+    // Update input buffer for Tab key detection
+    if (c == '\r' || c == '\n') {
+        *input_pos = 0;
+    } else if (c == 127 || c == '\b') {
+        // Backspace - update input buffer position
+        if (*input_pos > 0) {
+            (*input_pos)--;
+        }
+    } else {
+        if (*input_pos < INPUT_BUFFER_SIZE - 1) {
+            input_buffer[(*input_pos)++] = c;
+        }
+    }
+    
     return true;
 }
 
@@ -154,62 +283,10 @@ bool aish_process_input(AishState *state, const char *input, size_t input_len) {
     
     // Check if we're in Chat mode
     if (terminal_get_mode(&state->terminal) == MODE_CHAT) {
-        // Process input as a natural language query
-        ApiResponse response;
-        
-        // Send request to OpenAI API
-        if (!api_send_request(input, &state->config, &response)) {
-            fprintf(stderr, "Error: Failed to send API request\n");
-            if (response.error != NULL) {
-                fprintf(stderr, "API Error: %s\n", response.error);
-            }
-            api_free_response(&response);
-            return false;
-        }
-        
-        // Check if we got a valid command
-        if (!response.is_valid || response.command == NULL) {
-            fprintf(stderr, "Error: Invalid command received from API\n");
-            api_free_response(&response);
-            return false;
-        }
-        
-        // Display the command with proper formatting
-        const char *cmd_prefix = "\r\n[AISH: Generated command] ";
-        write(STDERR_FILENO, cmd_prefix, strlen(cmd_prefix));
-        write(STDERR_FILENO, response.command, strlen(response.command));
-        const char *cmd_suffix = "\r\n";
-        write(STDERR_FILENO, cmd_suffix, strlen(cmd_suffix));
-        
-        // Write the command to the bash process
-        if (write(state->bash_master_fd, response.command, strlen(response.command)) == -1) {
-            fprintf(stderr, "Error: Failed to write command to bash: %s\n", strerror(errno));
-            api_free_response(&response);
-            return false;
-        }
-        
-        // Write a newline to execute the command
-        if (write(state->bash_master_fd, "\n", 1) == -1) {
-            fprintf(stderr, "Error: Failed to write newline to bash: %s\n", strerror(errno));
-            api_free_response(&response);
-            return false;
-        }
-        
-        // Clean up
-        api_free_response(&response);
-        
-        // Switch back to Bash mode
-        terminal_toggle_mode(&state->terminal);
-        
+        return process_chat_input(state, input, input_len);
     } else {
-        // In Bash mode, just forward the input to bash
-        if (write(state->bash_master_fd, input, input_len) == -1) {
-            fprintf(stderr, "Error: Failed to write input to bash: %s\n", strerror(errno));
-            return false;
-        }
+        return process_bash_input(state, input, input_len);
     }
-    
-    return true;
 }
 
 bool aish_process_bash_output(AishState *state) {
@@ -260,12 +337,11 @@ int aish_run(AishState *state) {
     // Main loop
     char input_buffer[INPUT_BUFFER_SIZE];
     size_t input_pos = 0;
-    bool at_start_of_line = true;
     
     // Use write instead of fprintf to ensure proper formatting
     const char *welcome_msg = "AISH - AI Shell v0.1\r\n";
     write(STDERR_FILENO, welcome_msg, strlen(welcome_msg));
-    const char *help_msg = "Press Tab at the start of a line to toggle between Bash and Chat modes.\r\n";
+    const char *help_msg = "Press Tab when the input is empty to toggle between Bash and Chat modes.\r\n";
     write(STDERR_FILENO, help_msg, strlen(help_msg));
     
     while (state->running) {
@@ -299,46 +375,27 @@ int aish_run(AishState *state) {
             
             if (bytes_read > 0) {
                 // Process the keypress
-                if (terminal_process_key(&state->terminal, c, at_start_of_line)) {
+                
+                if (terminal_process_key(&state->terminal, c, input_pos)) {
                     // Mode was toggled, reset input buffer
                     input_pos = 0;
-                    at_start_of_line = true;
+                    
+                    // Note: terminal_process_key already toggled the mode, so we don't need to call terminal_toggle_mode
+                    // terminal_toggle_mode(&state->terminal, state->bash_master_fd);
+                    
+                    // Display the appropriate prompt based on the current mode
+                    display_prompt(state);
+                    
                     continue;
                 }
                 
-                // Handle special keys
-                if (c == '\r' || c == '\n') {
-                    // Enter key - process the input
-                    input_buffer[input_pos] = '\0';
-                    
-                    // Echo a newline
-                    const char *newline = "\r\n";
-                    write(STDOUT_FILENO, newline, strlen(newline));
-                    
-                    aish_process_input(state, input_buffer, input_pos);
-                    input_pos = 0;
-                    at_start_of_line = true;
-                } else if (c == 127 || c == '\b') {
-                    // Backspace - delete the last character
-                    if (input_pos > 0) {
-                        input_pos--;
-                        // Echo the backspace
-                        const char *backspace = "\b \b";
-                        if (write(STDOUT_FILENO, backspace, 3) == -1) {
-                            fprintf(stderr, "Error: Failed to write backspace: %s\n", strerror(errno));
-                        }
-                    }
+                // Process the keypress based on the current mode
+                if (terminal_get_mode(&state->terminal) == MODE_BASH) {
+                    // Process the keypress in Bash mode
+                    process_bash_keypress(state, c, input_buffer, &input_pos);
                 } else {
-                    // Regular character - add to buffer
-                    if (input_pos < INPUT_BUFFER_SIZE - 1) {
-                        input_buffer[input_pos++] = c;
-                        at_start_of_line = false;
-                        
-                        // Echo the character
-                        if (write(STDOUT_FILENO, &c, 1) == -1) {
-                            fprintf(stderr, "Error: Failed to echo character: %s\n", strerror(errno));
-                        }
-                    }
+                    // Process the keypress in Chat mode
+                    process_chat_keypress(state, c, input_buffer, &input_pos);
                 }
             } else if (bytes_read == -1 && errno != EAGAIN) {
                 fprintf(stderr, "Error: Failed to read from stdin: %s\n", strerror(errno));
