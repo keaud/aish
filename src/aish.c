@@ -4,6 +4,8 @@
  */
 
 #include "aish.h"
+#include "prompt.h"
+#include "chat.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -146,109 +148,6 @@ bool aish_spawn_bash(AishState *state) {
     
     // Set the initial prompt
     terminal_update_prompt(&state->terminal, state->bash_master_fd);
-    
-    return true;
-}
-
-/**
- * @brief Display the appropriate prompt based on the current mode
- * 
- * @param state The AISH state
- * @return true if successful, false otherwise
- */
-bool display_prompt(AishState *state) {
-    if (state == NULL) {
-        return false;
-    }
-    
-    // Clear the current line
-    const char *clear_line = "\r\033[2K"; // Carriage return + clear entire line
-    
-    if (write(STDOUT_FILENO, clear_line, strlen(clear_line)) == -1) {
-        fprintf(stderr, "Error: Failed to write clear line: %s\n", strerror(errno));
-        return false;
-    }
-    
-    // If we're in Chat mode, display our custom prompt
-    if (terminal_get_mode(&state->terminal) == MODE_CHAT) {
-        const char *prompt = terminal_get_prompt(&state->terminal);
-        
-        if (write(STDOUT_FILENO, prompt, strlen(prompt)) == -1) {
-            fprintf(stderr, "Error: Failed to write prompt: %s\n", strerror(errno));
-            return false;
-        }
-    } else {
-        // In Bash mode, send a newline to trigger Bash to display its prompt
-        // We'll use a simple newline character to avoid any special characters
-        if (write(state->bash_master_fd, "\n", 1) == -1) {
-            fprintf(stderr, "Error: Failed to write newline to bash: %s\n", strerror(errno));
-            return false;
-        }
-    }
-    
-    return true;
-}
-
-/**
- * @brief Process input in Chat mode
- * 
- * @param state The AISH state
- * @param input The input string
- * @param input_len The length of the input string
- * @return true if successful, false otherwise
- */
-bool process_chat_input(AishState *state, const char *input, size_t input_len) {
-    if (state == NULL || input == NULL || input_len == 0) {
-        return false;
-    }
-    
-    // Process input as a natural language query
-    ApiResponse response;
-    
-    // Send request to OpenAI API
-    if (!api_send_request(input, &state->config, &response)) {
-        fprintf(stderr, "Error: Failed to send API request\n");
-        if (response.error != NULL) {
-            fprintf(stderr, "API Error: %s\n", response.error);
-        }
-        api_free_response(&response);
-        return false;
-    }
-    
-    // Check if we got a valid command
-    if (!response.is_valid || response.command == NULL) {
-        fprintf(stderr, "Error: Invalid command received from API\n");
-        api_free_response(&response);
-        return false;
-    }
-    
-    // Display the command with proper formatting
-    const char *cmd_prefix = "\r\n[AISH: Generated command] ";
-    write(STDERR_FILENO, cmd_prefix, strlen(cmd_prefix));
-    write(STDERR_FILENO, response.command, strlen(response.command));
-    const char *cmd_suffix = "\r\n";
-    write(STDERR_FILENO, cmd_suffix, strlen(cmd_suffix));
-    
-    // Write the command to the bash process
-    if (write(state->bash_master_fd, response.command, strlen(response.command)) == -1) {
-        fprintf(stderr, "Error: Failed to write command to bash: %s\n", strerror(errno));
-        api_free_response(&response);
-        return false;
-    }
-    
-    // Write a newline to execute the command
-    if (write(state->bash_master_fd, "\n", 1) == -1) {
-        fprintf(stderr, "Error: Failed to write newline to bash: %s\n", strerror(errno));
-        api_free_response(&response);
-        return false;
-    }
-    
-    // Clean up
-    api_free_response(&response);
-    
-    // Switch back to Bash mode
-    // Note: We'll set the mode directly instead of calling terminal_toggle_mode
-    state->terminal.current_mode = MODE_BASH;
     
     return true;
 }
