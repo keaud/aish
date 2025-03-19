@@ -60,10 +60,10 @@ void terminal_disable_raw_mode(TerminalState *term);
  * 
  * @param term Pointer to TerminalState structure
  * @param key The key that was pressed
- * @param input_pos Current position in the input buffer
+ * @param at_start_of_line Flag indicating if cursor is at start of line
  * @return true if mode was toggled, false otherwise
  */
-bool terminal_process_key(TerminalState *term, char key, size_t input_pos);
+bool terminal_process_key(TerminalState *term, char key, bool at_start_of_line);
 
 /**
  * @brief Toggle between Bash and Chat modes
