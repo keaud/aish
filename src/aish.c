@@ -151,56 +151,39 @@ bool aish_spawn_bash(AishState *state) {
 }
 
 /**
- * @brief Display the Chat mode prompt
+ * @brief Display the appropriate prompt based on the current mode
  * 
  * @param state The AISH state
  * @return true if successful, false otherwise
  */
-bool display_chat_prompt(AishState *state) {
+bool display_prompt(AishState *state) {
     if (state == NULL) {
         return false;
     }
     
-    // Display the prompt in place (using carriage return and clear line)
-    const char *prompt = terminal_get_prompt(&state->terminal);
-    const char *clear_line = "\r\033[K"; // Carriage return + clear to end of line
+    // Clear the current line
+    const char *clear_line = "\r\033[2K"; // Carriage return + clear entire line
     
     if (write(STDOUT_FILENO, clear_line, strlen(clear_line)) == -1) {
         fprintf(stderr, "Error: Failed to write clear line: %s\n", strerror(errno));
         return false;
     }
     
-    if (write(STDOUT_FILENO, prompt, strlen(prompt)) == -1) {
-        fprintf(stderr, "Error: Failed to write prompt: %s\n", strerror(errno));
-        return false;
-    }
-    
-    return true;
-}
-
-/**
- * @brief Display the Bash mode prompt by sending a newline to Bash
- * 
- * @param state The AISH state
- * @return true if successful, false otherwise
- */
-bool display_bash_prompt(AishState *state) {
-    if (state == NULL) {
-        return false;
-    }
-    
-    // First, clear the current line
-    const char *clear_line = "\r\033[K"; // Carriage return + clear to end of line
-    
-    if (write(STDOUT_FILENO, clear_line, strlen(clear_line)) == -1) {
-        fprintf(stderr, "Error: Failed to write clear line: %s\n", strerror(errno));
-        return false;
-    }
-    
-    // Send a newline to trigger Bash to display its prompt
-    if (write(state->bash_master_fd, "\n", 1) == -1) {
-        fprintf(stderr, "Error: Failed to write newline to bash: %s\n", strerror(errno));
-        return false;
+    // If we're in Chat mode, display our custom prompt
+    if (terminal_get_mode(&state->terminal) == MODE_CHAT) {
+        const char *prompt = terminal_get_prompt(&state->terminal);
+        
+        if (write(STDOUT_FILENO, prompt, strlen(prompt)) == -1) {
+            fprintf(stderr, "Error: Failed to write prompt: %s\n", strerror(errno));
+            return false;
+        }
+    } else {
+        // In Bash mode, send a newline to trigger Bash to display its prompt
+        // We'll use a simple newline character to avoid any special characters
+        if (write(state->bash_master_fd, "\n", 1) == -1) {
+            fprintf(stderr, "Error: Failed to write newline to bash: %s\n", strerror(errno));
+            return false;
+        }
     }
     
     return true;
@@ -328,7 +311,7 @@ bool process_chat_keypress(AishState *state, char c, char *input_buffer, size_t 
         *input_pos = 0;
         
         // Display the prompt
-        display_chat_prompt(state);
+        display_prompt(state);
     } else if (c == 127 || c == '\b') {
         // Backspace - delete the last character
         if (*input_pos > 0) {
@@ -502,11 +485,7 @@ int aish_run(AishState *state) {
                     // terminal_toggle_mode(&state->terminal, state->bash_master_fd);
                     
                     // Display the appropriate prompt based on the current mode
-                    if (terminal_get_mode(&state->terminal) == MODE_CHAT) {
-                        display_chat_prompt(state);
-                    } else {
-                        display_bash_prompt(state);
-                    }
+                    display_prompt(state);
                     
                     continue;
                 }
