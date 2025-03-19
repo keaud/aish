@@ -98,14 +98,20 @@ bool terminal_process_key(TerminalState *term, char key, size_t input_pos) {
     // In Bash mode, only process Tab when input buffer is empty
     // In Chat mode, allow Tab to toggle back to Bash mode regardless of position
     if (key == TAB_KEY && (input_pos == 0 || term->current_mode == MODE_CHAT)) {
-        terminal_toggle_mode(term);
+        // We don't call terminal_toggle_mode here because we need the bash_fd parameter
+        // The caller will call terminal_toggle_mode with the bash_fd parameter
+        if (term->current_mode == MODE_BASH) {
+            term->current_mode = MODE_CHAT;
+        } else {
+            term->current_mode = MODE_BASH;
+        }
         return true;
     }
     
     return false;
 }
 
-void terminal_toggle_mode(TerminalState *term) {
+void terminal_toggle_mode(TerminalState *term, int bash_fd) {
     if (term == NULL) {
         return;
     }
@@ -113,14 +119,34 @@ void terminal_toggle_mode(TerminalState *term) {
     // Toggle between Bash and Chat modes
     if (term->current_mode == MODE_BASH) {
         term->current_mode = MODE_CHAT;
-        // Use write instead of fprintf to ensure proper formatting
-        const char *msg = "\r\n[AISH: Chat Mode - Type your query]\r\n";
-        write(STDERR_FILENO, msg, strlen(msg));
     } else {
         term->current_mode = MODE_BASH;
-        // Use write instead of fprintf to ensure proper formatting
-        const char *msg = "\r\n[AISH: Bash Mode]\r\n";
-        write(STDERR_FILENO, msg, strlen(msg));
+    }
+    
+    // Update the prompt
+    terminal_update_prompt(term, bash_fd);
+}
+
+void terminal_update_prompt(TerminalState *term, int bash_fd) {
+    if (term == NULL || bash_fd < 0) {
+        return;
+    }
+    
+    // No need to display any message here
+    // The prompt will be displayed by the caller
+}
+
+const char *terminal_get_prompt(TerminalState *term) {
+    if (term == NULL) {
+        return "";
+    }
+    
+    if (term->current_mode == MODE_CHAT) {
+        return "aish (CHAT): ";
+    } else {
+        // In Bash mode, we don't display our own prompt
+        // We let Bash handle its own prompt
+        return "";
     }
 }
 
