@@ -1,0 +1,2 @@
+# aish
+AI Shell
