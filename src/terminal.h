@@ -69,25 +69,8 @@ bool terminal_process_key(TerminalState *term, char key, size_t input_pos);
  * @brief Toggle between Bash and Chat modes
  * 
  * @param term Pointer to TerminalState structure
- * @param bash_fd File descriptor for bash process (for sending prompt update)
  */
-void terminal_toggle_mode(TerminalState *term, int bash_fd);
-
-/**
- * @brief Update the terminal prompt based on the current mode
- * 
- * @param term Pointer to TerminalState structure
- * @param bash_fd File descriptor for bash process
- */
-void terminal_update_prompt(TerminalState *term, int bash_fd);
-
-/**
- * @brief Get the current prompt string based on the mode
- * 
- * @param term Pointer to TerminalState structure
- * @return The prompt string
- */
-const char *terminal_get_prompt(TerminalState *term);
+void terminal_toggle_mode(TerminalState *term);
 
 /**
  * @brief Get the current input mode
