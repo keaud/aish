@@ -90,14 +90,14 @@ void terminal_disable_raw_mode(TerminalState *term) {
     term->raw_mode_enabled = false;
 }
 
-bool terminal_process_key(TerminalState *term, char key, bool at_start_of_line) {
+bool terminal_process_key(TerminalState *term, char key, size_t input_pos) {
     if (term == NULL) {
         return false;
     }
     
-    // Check if Tab key was pressed at the start of a line
-    // Allow Tab to toggle mode regardless of current mode
-    if (key == TAB_KEY && at_start_of_line) {
+    // In Bash mode, only process Tab when input buffer is empty
+    // In Chat mode, allow Tab to toggle back to Bash mode regardless of position
+    if (key == TAB_KEY && (input_pos == 0 || term->current_mode == MODE_CHAT)) {
         terminal_toggle_mode(term);
         return true;
     }
