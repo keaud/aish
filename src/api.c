@@ -9,6 +9,7 @@
 #include <string.h>
 #include <curl/curl.h>
 
+
 /* 
  * Include json-c header
  * On some systems, this might be in a different location.
@@ -114,7 +115,7 @@ bool api_send_request(const char *user_input, const Config *config, ApiResponse 
     struct json_object *system_msg = json_object_new_object();
     json_object_object_add(system_msg, "role", json_object_new_string("system"));
     json_object_object_add(system_msg, "content", 
-                          json_object_new_string("You are a CLI assistant that translates natural language to valid Bash commands. Always return structured JSON output."));
+                          json_object_new_string("You are a CLI assistant that translates natural language to valid Bash commands. Always return structured JSON output with a 'command' field containing the bash command. Example: {\"command\": \"ls -la\"}"));
     json_object_array_add(messages_array, system_msg);
     
     // Add user message
@@ -238,34 +239,39 @@ bool api_send_request(const char *user_input, const Config *config, ApiResponse 
     
     const char *content_str = json_object_get_string(content_obj);
     
+    // Debug: Print the content string to see what the API is returning
+    // fprintf(stderr, "API Response Content: %s\n", content_str);
+    
     // Parse the content as JSON to extract the command
     struct json_object *command_json = json_tokener_parse(content_str);
-    if (command_json == NULL) {
-        fprintf(stderr, "Error: Failed to parse command JSON\n");
-        response->error = strdup("Failed to parse command JSON");
-        json_object_put(json_response);
-        free(response_data.data);
-        return false;
-    }
-    
-    struct json_object *command_obj;
-    if (!json_object_object_get_ex(command_json, "command", &command_obj)) {
-        fprintf(stderr, "Error: Invalid command format (missing command field)\n");
-        response->error = strdup("Invalid command format");
+    if (command_json != NULL) {
+        // Content is valid JSON
+        struct json_object *command_obj;
+        if (json_object_object_get_ex(command_json, "command", &command_obj)) {
+            // If the command field exists, use it
+            const char *command_str = json_object_get_string(command_obj);
+            response->command = strdup(command_str);
+        } else {
+            // If the command field doesn't exist, use the content string directly
+            fprintf(stderr, "Warning: Command field not found in API response JSON, using content directly\n");
+            response->command = strdup(content_str);
+        }
         json_object_put(command_json);
-        json_object_put(json_response);
-        free(response_data.data);
-        return false;
+    } else {
+        // Content is not valid JSON, try to extract a command from it directly
+        fprintf(stderr, "Warning: API response is not valid JSON, attempting to extract command\n");
+        
+        // For now, just use the content string directly
+        response->command = strdup(content_str);
+        
+        // TODO: Implement more sophisticated command extraction
+        // For example, look for patterns like "The command is: ls -la"
     }
-    
-    const char *command_str = json_object_get_string(command_obj);
-    response->command = strdup(command_str);
     
     // Validate the command
     response->is_valid = api_validate_command(response->command);
     
     // Clean up
-    json_object_put(command_json);
     json_object_put(json_response);
     free(response_data.data);
     

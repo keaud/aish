@@ -48,10 +48,10 @@ bool process_chat_input(AishState *state, const char *input, size_t input_len) {
     
     // Display the command with proper formatting
     const char *cmd_prefix = "\r\n[AISH: Generated command] ";
-    write(STDERR_FILENO, cmd_prefix, strlen(cmd_prefix));
-    write(STDERR_FILENO, response.command, strlen(response.command));
+    //write(STDERR_FILENO, cmd_prefix, strlen(cmd_prefix));
+    //write(STDERR_FILENO, response.command, strlen(response.command));
     const char *cmd_suffix = "\r\n";
-    write(STDERR_FILENO, cmd_suffix, strlen(cmd_suffix));
+    //write(STDERR_FILENO, cmd_suffix, strlen(cmd_suffix));
     
     // Write the command to the bash process
     if (write(state->bash_master_fd, response.command, strlen(response.command)) == -1) {
